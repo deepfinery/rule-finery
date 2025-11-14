@@ -1,0 +1,206 @@
+package txaml;
+
+dialect "java"
+
+import java.util.*;
+global java.util.List fired;
+global java.util.Map out;
+
+// ---------- Helpers ----------
+function String s(Map m, String k) { return m!=null && m.get(k)!=null ? m.get(k).toString() : null; }
+function Double d(Map m, String k) { Object v = (m!=null)? m.get(k) : null; return v instanceof Number ? ((Number)v).doubleValue() : null; }
+function Integer i(Map m, String k) { Object v = (m!=null)? m.get(k) : null; return v instanceof Number ? ((Number)v).intValue() : null; }
+
+function Long parseHour(Map tx) {
+  try {
+    String ts = s(tx,"timestamp"); // "YYYY-MM-DDThh:mm:ssZ"
+    return ts!=null && ts.length()>=13 ? Long.parseLong(ts.substring(11,13)) : null;
+  } catch(Exception e){ return null; }
+}
+
+function boolean isHighRiskCountry(String c) {
+  if (c == null) return false;
+  String[] hr = new String[]{"IR","KP","SY","AF","RU"};
+  for (int k=0;k<hr.length;k++) if (hr[k].equals(c)) return true;
+  return false;
+}
+
+function boolean structuringNearThreshold(List txs) {
+  if (txs == null) return false;
+  int cnt = 0;
+  for (int i=0;i<txs.size();i++){
+    Object o = txs.get(i);
+    if (o instanceof Map) {
+      Map t = (Map) o;
+      Double a = d(t,"amount");
+      String ch = s(t,"channel");
+      if (a!=null && a>=8000.0 && a<10000.0 && (ch==null || !ch.equalsIgnoreCase("wire"))) cnt++;
+    }
+  }
+  return cnt >= 3;
+}
+
+function boolean roundTripSameCounterparty24h(List txs) {
+  if (txs == null) return false;
+  for (int i=0;i<txs.size();i++){
+    Object oi = txs.get(i); if (!(oi instanceof Map)) continue; Map a=(Map)oi;
+    for (int j=i+1;j<txs.size();j++){
+      Object oj = txs.get(j); if (!(oj instanceof Map)) continue; Map b=(Map)oj;
+      String cpa = s(a,"counterparty_id"), cpb = s(b,"counterparty_id");
+      String da = s(a,"direction"), db = s(b,"direction");
+      Double aa = d(a,"amount"), ab = d(b,"amount");
+      if (cpa!=null && cpa.equals(cpb) &&
+          "in".equals(da) && "out".equals(db) &&
+          aa!=null && ab!=null && Math.abs(aa-ab) <= Math.max(aa,ab)*0.02) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function boolean behaviorShiftVsBaseline(Map person, List txs) {
+  if (person==null || txs==null) return false;
+  Double base = d(person,"avg_tx_amount_90d");
+  if (base==null || base<=0.0) return false;
+  double sum=0; int n=0;
+  for (int i=0;i<txs.size();i++){
+    Object o = txs.get(i); if (!(o instanceof Map)) continue;
+    Double a = d((Map)o,"amount"); if (a!=null){ sum+=a; n++; }
+  }
+  if (n<3) return false;
+  double avg = sum/n;
+  return avg >= base*5.0;
+}
+
+// ---------- Init ----------
+rule "INIT"
+salience 200
+when
+  $facts : Map()
+then
+  out.put("flags", new ArrayList());
+  out.put("escalation_level", 0);
+  fired.add("INIT");
+end
+
+// ---------- Hard stops ----------
+rule "SANCTIONS_BLOCK"
+salience 190
+when
+  $facts : Map( this["person"] != null )
+  eval( Boolean.TRUE.equals( ((Map)$facts.get("person")).get("sanctions_hit") ) )
+then
+  ((List)out.get("flags")).add("SANCTIONS_HIT");
+  out.put("aml_decision","BLOCK");
+  out.put("escalation_level",3);
+  fired.add("SANCTIONS_BLOCK");
+end
+
+rule "PEP_REVIEW"
+salience 180
+when
+  $facts : Map( this["person"] != null )
+  eval( Boolean.TRUE.equals( ((Map)$facts.get("person")).get("pep") ) )
+then
+  ((List)out.get("flags")).add("PEP");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  out.put("escalation_level", Math.max((Integer)out.get("escalation_level"),2));
+  fired.add("PEP_REVIEW");
+end
+
+// ---------- Per-transaction flags ----------
+rule "LARGE_WIRE_SINGLE"
+salience 170
+when
+  $tx : Map( this["__type"] == "Transaction",
+             "wire".equalsIgnoreCase( s(this,"channel") ),
+             d(this,"amount") != null && d(this,"amount") >= 10000.0 )
+then
+  ((List)out.get("flags")).add("LARGE_WIRE");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  out.put("escalation_level", Math.max((Integer)out.get("escalation_level"),2));
+  fired.add("LARGE_WIRE_SINGLE");
+end
+
+rule "HIGH_RISK_COUNTERPARTY"
+salience 165
+when
+  $tx : Map( this["__type"] == "Transaction" )
+  eval( isHighRiskCountry( s($tx,"counterparty_country") ) )
+then
+  ((List)out.get("flags")).add("HIGH_RISK_COUNTERPARTY");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  out.put("escalation_level", Math.max((Integer)out.get("escalation_level"),2));
+  fired.add("HIGH_RISK_COUNTERPARTY");
+end
+
+rule "ODD_HOUR_ACTIVITY"
+salience 160
+when
+  $tx : Map( this["__type"] == "Transaction" )
+  eval( parseHour($tx) != null && (parseHour($tx) <= 4 || parseHour($tx) >= 23) )
+then
+  ((List)out.get("flags")).add("ODD_HOUR");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  fired.add("ODD_HOUR_ACTIVITY");
+end
+
+// ---------- Pattern rules over tx list ----------
+rule "STRUCTURING_NEAR_THRESHOLD"
+salience 150
+when
+  $facts : Map( this["recent_tx"] != null )
+  eval( structuringNearThreshold( (List)$facts.get("recent_tx") ) )
+then
+  ((List)out.get("flags")).add("STRUCTURING");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  out.put("escalation_level", Math.max((Integer)out.get("escalation_level"),2));
+  fired.add("STRUCTURING_NEAR_THRESHOLD");
+end
+
+rule "ROUND_TRIP_SAME_COUNTERPARTY_24H"
+salience 145
+when
+  $facts : Map( this["recent_tx"] != null )
+  eval( roundTripSameCounterparty24h( (List)$facts.get("recent_tx") ) )
+then
+  ((List)out.get("flags")).add("ROUND_TRIP");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  out.put("escalation_level", Math.max((Integer)out.get("escalation_level"),2));
+  fired.add("ROUND_TRIP_SAME_COUNTERPARTY_24H");
+end
+
+rule "BEHAVIOR_SHIFT_VS_BASELINE"
+salience 140
+when
+  $facts : Map( this["person"] != null, this["recent_tx"] != null )
+  eval( behaviorShiftVsBaseline( (Map)$facts.get("person"), (List)$facts.get("recent_tx") ) )
+then
+  ((List)out.get("flags")).add("BEHAVIOR_SHIFT");
+  if (!"BLOCK".equals(out.get("aml_decision"))) out.put("aml_decision","REVIEW");
+  fired.add("BEHAVIOR_SHIFT_VS_BASELINE");
+end
+
+// ---------- Final decision ----------
+rule "FINAL_DECISION"
+salience 50
+when
+  eval( true )
+then
+  if (!out.containsKey("aml_decision")) out.put("aml_decision","CLEAR");
+  List flags = (List) out.get("flags");
+  int score = 0;
+  for (int k=0;k<flags.size();k++) {
+    String ff = (String) flags.get(k);
+    if ("SANCTIONS_HIT".equals(ff)) score += 10;
+    else if ("PEP".equals(ff) || "LARGE_WIRE".equals(ff) || "HIGH_RISK_COUNTERPARTY".equals(ff) || "ROUND_TRIP".equals(ff)) score += 4;
+    else if ("STRUCTURING".equals(ff) || "ODD_HOUR".equals(ff) || "BEHAVIOR_SHIFT".equals(ff)) score += 2;
+  }
+  int level = ((Integer)out.get("escalation_level")).intValue();
+  if ("BLOCK".equals(out.get("aml_decision"))) { level = 3; }
+  else if (score >= 8) { out.put("aml_decision","SAR"); level = Math.max(level,3); }
+  else if (score >= 4) { out.put("aml_decision","REVIEW"); level = Math.max(level,2); }
+  out.put("escalation_level", level);
+  fired.add("FINAL_DECISION");
+end
