@@ -5,6 +5,9 @@ from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, get_peft_model
+from pathlib import Path
+
+GCS_SCHEME = "gs://"
 
 # Use a standard relative import
 from map_facts_to_text import row_to_example
@@ -20,6 +23,23 @@ def main():
     parser.add_argument("--dataset_file", type=str, required=True, help="Path to the full dataset JSONL file.")
     parser.add_argument("--val_split_size", type=float, default=0.1, help="Proportion of the dataset to use for validation (e.g., 0.1 for 10%%).")
     parser.add_argument("--output_dir", type=str, default="./llama3-3b-aml-qlora", help="Directory to save the trained model adapter.")
+    parser.add_argument("--max_length", type=int, default=512, help="Maximum number of tokens per packed example.")
+    parser.add_argument("--packing", action="store_true", help="Enable dataset packing (requires flash attention kernels).")
+    parser.add_argument("--per_device_train_batch_size", type=int, default=1, help="Per-device train batch size.")
+    parser.add_argument("--per_device_eval_batch_size", type=int, default=1, help="Per-device eval batch size.")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=16, help="Gradient accumulation steps.")
+    parser.add_argument("--num_train_epochs", type=int, default=2, help="Number of training epochs.")
+    parser.add_argument("--learning_rate", type=float, default=2e-4, help="Learning rate.")
+    parser.add_argument("--lr_scheduler_type", type=str, default="cosine", help="LR scheduler type.")
+    parser.add_argument("--warmup_ratio", type=float, default=0.03, help="Warmup ratio.")
+    parser.add_argument("--logging_steps", type=int, default=20, help="Logging frequency in steps.")
+    parser.add_argument("--eval_steps", type=int, default=500, help="Evaluation frequency in steps.")
+    parser.add_argument("--save_steps", type=int, default=500, help="Checkpoint save frequency in steps.")
+    parser.add_argument("--gradient_checkpointing", dest="gradient_checkpointing", action="store_true", help="Enable gradient checkpointing.")
+    parser.add_argument("--no_gradient_checkpointing", dest="gradient_checkpointing", action="store_false", help="Disable gradient checkpointing.")
+    parser.set_defaults(gradient_checkpointing=True)
+    parser.add_argument("--bf16", action="store_true", help="Enable bf16 mixed precision where supported.")
+    parser.add_argument("--upload_output_to", type=str, default=None, help="Optional gs:// URI to upload the trained adapter artifacts.")
     args = parser.parse_args()
 
     print(f"Starting training with the following configuration:")
@@ -66,22 +86,23 @@ def main():
 
     cfg = SFTConfig(
         output_dir=args.output_dir,
-        max_length=512,
-        packing=False,
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
-        gradient_accumulation_steps=16,
-        num_train_epochs=2,
-        learning_rate=2e-4,
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
-        logging_steps=20,
+        max_length=args.max_length,
+        packing=args.packing,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        per_device_eval_batch_size=args.per_device_eval_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        num_train_epochs=args.num_train_epochs,
+        learning_rate=args.learning_rate,
+        lr_scheduler_type=args.lr_scheduler_type,
+        warmup_ratio=args.warmup_ratio,
+        logging_steps=args.logging_steps,
         eval_strategy="steps",
-        eval_steps=500,
-        save_steps=500,
+        eval_steps=args.eval_steps,
+        save_steps=args.save_steps,
         dataset_text_field="text",
         report_to=report_to,
-        gradient_checkpointing=True,
+        gradient_checkpointing=args.gradient_checkpointing,
+        bf16=args.bf16,
     )
 
     trainer = SFTTrainer(
@@ -95,5 +116,36 @@ def main():
     trainer.model.save_pretrained(args.output_dir)
     tok.save_pretrained(args.output_dir)
 
+    if args.upload_output_to:
+        upload_directory_to_gcs(args.output_dir, args.upload_output_to)
+
 if __name__ == "__main__":
     main()
+
+
+def upload_directory_to_gcs(local_dir: str, gcs_uri: str) -> None:
+    """Upload the contents of `local_dir` to the target GCS URI."""
+    if not gcs_uri.startswith(GCS_SCHEME):
+        raise ValueError("upload_output_to must be a gs:// URI")
+
+    try:
+        from google.cloud import storage
+    except ImportError as exc:
+        raise ImportError("google-cloud-storage is required to upload to GCS") from exc
+
+    bucket_path = gcs_uri[len(GCS_SCHEME):]
+    bucket_name, _, prefix = bucket_path.partition("/")
+    prefix = prefix.strip("/")
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    base_path = Path(local_dir)
+    print(f"Uploading {base_path} to {gcs_uri}...")
+    for root, _, files in os.walk(local_dir):
+        for filename in files:
+            local_path = Path(root) / filename
+            rel_path = local_path.relative_to(base_path)
+            blob_path = f"{prefix}/{rel_path}".strip("/")
+            blob = bucket.blob(blob_path)
+            blob.upload_from_filename(local_path)
+    print(f"Upload complete: {gcs_uri}")
