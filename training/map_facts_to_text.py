@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 INSTR = (
 "You are an AML rule engine simulator. "
@@ -7,10 +8,16 @@ INSTR = (
 "Respond with JSON only."
 )
 
+def json_datetime_serializer(obj):
+    """JSON serializer for objects not serializable by default, like datetime."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
 def row_to_example(row):
     facts = row["facts"]
     decision = row["decision"]
-    prompt = INSTR + "\n\nFacts (JSON):\n" + json.dumps(facts, ensure_ascii=False)
+    prompt = f"{INSTR}\n\nFacts (JSON):\n{json.dumps(facts, ensure_ascii=False, default=json_datetime_serializer)}"
     target = json.dumps({
         "aml_decision": decision["aml_decision"],
         "reasons": decision.get("reasons", []),
