@@ -10,6 +10,12 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 PROJECT_ID="${PROJECT_ID:-hopeful-subject-478116-v6}"
 REGION="${REGION:-us-central1}"
 JOB_NAME="${JOB_NAME:-aml-llm-qlora-$(date +%Y%m%d-%H%M%S)}"
@@ -36,6 +42,21 @@ if [[ -z "$BUCKET" ]]; then
 fi
 
 PROJECT_NUMBER="${PROJECT_NUMBER:-$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')}"
+
+HF_TOKEN_VALUE="${HUGGING_FACE_HUB_TOKEN:-}"
+if [[ -z "$HF_TOKEN_VALUE" ]]; then
+  HF_TOKEN_VALUE="${HF_TOKEN:-}"
+fi
+if [[ -z "$HF_TOKEN_VALUE" ]]; then
+  HF_TOKEN_VALUE="${HUGGINGFACE_TOKEN:-}"
+fi
+if [[ -z "$HF_TOKEN_VALUE" ]]; then
+  HF_TOKEN_VALUE="${HUGGINGFACEHUB_API_TOKEN:-}"
+fi
+if [[ -z "$HF_TOKEN_VALUE" ]]; then
+  echo "Missing Hugging Face token. Set HUGGING_FACE_HUB_TOKEN in $REPO_ROOT/.env or export it before running this script." >&2
+  exit 1
+fi
 
 echo "Ensuring bucket IAM bindings for service accounts..."
 for MEMBER in \
@@ -90,6 +111,38 @@ gcloud builds submit "$REPO_ROOT" \
   --substitutions="_IMAGE_URI=${BUILD_IMAGE_URI},_CACHE_IMAGE_URI=${CACHE_IMAGE_URI}"
 
 EFFECTIVE_IMAGE="${IMAGE_URI:-$BUILD_IMAGE_URI}"
+JOB_SPEC_FILE="$(mktemp)"
+trap 'rm -f "$JOB_SPEC_FILE"' EXIT
+
+cat > "$JOB_SPEC_FILE" <<EOF
+workerPoolSpecs:
+- machineSpec:
+    machineType: a2-highgpu-1g
+    acceleratorType: NVIDIA_TESLA_A100
+    acceleratorCount: 1
+  replicaCount: 1
+  containerSpec:
+    imageUri: ${EFFECTIVE_IMAGE}
+    args:
+    - '--dataset_file=${DATASET_GCS_PATH}'
+    - '--output_dir=/tmp/model'
+    - '--upload_output_to=${OUTPUT_GCS_PATH}'
+    - '--max_length=2048'
+    - '--packing'
+    - '--per_device_train_batch_size=4'
+    - '--per_device_eval_batch_size=4'
+    - '--gradient_accumulation_steps=2'
+    - '--learning_rate=1e-4'
+    - '--num_train_epochs=3'
+    - '--logging_steps=50'
+    - '--eval_steps=200'
+    - '--save_steps=200'
+    - '--warmup_ratio=0.05'
+    - '--bf16'
+    env:
+    - name: HUGGING_FACE_HUB_TOKEN
+      value: ${HF_TOKEN_VALUE}
+EOF
 
 echo "Submitting Vertex AI CustomJob:"
 echo "  Project:   $PROJECT_ID"
@@ -106,5 +159,4 @@ gcloud ai custom-jobs create \
   --project="$PROJECT_ID" \
   --region="$REGION" \
   --display-name="$JOB_NAME" \
-  --worker-pool-spec="machine-type=a2-highgpu-1g,accelerator-type=NVIDIA_TESLA_A100,accelerator-count=1,replica-count=1,container-image-uri=${EFFECTIVE_IMAGE}" \
-  --args="--dataset_file=${DATASET_GCS_PATH}","--output_dir=/tmp/model","--upload_output_to=${OUTPUT_GCS_PATH}","--max_length=2048","--packing","--per_device_train_batch_size=4","--per_device_eval_batch_size=4","--gradient_accumulation_steps=2","--learning_rate=1e-4","--num_train_epochs=3","--logging_steps=50","--eval_steps=200","--save_steps=200","--warmup_ratio=0.05","--bf16"
+  --config="$JOB_SPEC_FILE"

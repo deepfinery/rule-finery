@@ -8,6 +8,12 @@ from peft import LoraConfig, get_peft_model
 from pathlib import Path
 
 GCS_SCHEME = "gs://"
+HF_TOKEN_ENV_KEYS = (
+    "HF_TOKEN",
+    "HUGGINGFACE_TOKEN",
+    "HUGGING_FACE_HUB_TOKEN",
+    "HUGGINGFACEHUB_API_TOKEN",
+)
 
 # Use a standard relative import
 from map_facts_to_text import row_to_example
@@ -16,6 +22,21 @@ def to_chat(example):
     """Converts a dataset row to the required prompt-response chat format."""
     ex = row_to_example(example)
     return {"text": ex["prompt"] + "\n" + ex["response"]}
+
+def resolve_hf_token(arg_token: str | None) -> str:
+    """Resolve the Hugging Face Hub token from CLI args or environment."""
+    if arg_token:
+        return arg_token
+
+    for key in HF_TOKEN_ENV_KEYS:
+        value = os.environ.get(key)
+        if value:
+            return value
+
+    raise RuntimeError(
+        "Missing Hugging Face token. Pass --hf_token or set one of: "
+        + ", ".join(HF_TOKEN_ENV_KEYS)
+    )
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune a language model with LoRA.")
@@ -40,6 +61,7 @@ def main():
     parser.set_defaults(gradient_checkpointing=True)
     parser.add_argument("--bf16", action="store_true", help="Enable bf16 mixed precision where supported.")
     parser.add_argument("--upload_output_to", type=str, default=None, help="Optional gs:// URI to upload the trained adapter artifacts.")
+    parser.add_argument("--hf_token", type=str, default=None, help="Optional Hugging Face Hub token for gated models.")
     args = parser.parse_args()
 
     print(f"Starting training with the following configuration:")
@@ -57,6 +79,9 @@ def main():
     ds_train = split_dataset["train"].map(to_chat, remove_columns=["facts","decision","fired_rules"])
     ds_val   = split_dataset["test"].map(to_chat, remove_columns=["facts","decision","fired_rules"])
 
+    hf_token = resolve_hf_token(args.hf_token)
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
+
     model_load_kwargs = {"device_map": "auto"}
     if torch.backends.mps.is_available():
         model_load_kwargs["device_map"] = {"": "mps"}
@@ -64,10 +89,11 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model_id,
+        token=hf_token,
         **model_load_kwargs,
     )
 
-    tok = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
+    tok = AutoTokenizer.from_pretrained(args.model_id, token=hf_token, use_fast=True)
     tok.pad_token = tok.eos_token
 
     try:
