@@ -144,6 +144,48 @@ Tip: aim for balanced coverage of every rule and edge case rather than sheer vol
 
 ---
 
+## Training
+```
+export PROJECT_ID=hopeful-subject-478116-v6
+export REGION=us-central1
+export BUCKET=finery-training
+```
+
+### Vertex AI workflow (GPU fine-tuning)
+The repo ships with `cloud/submit_vertex_job.sh`, which automates dataset upload, container build, and Vertex A100 submission:
+
+1. **Prepare**  
+   ```bash
+   gcloud auth login
+   gcloud config set project $PROJECT_ID
+   gcloud services enable aiplatform.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+   ```
+2. **Run the helper**  
+   ```bash
+   cd training
+   ../cloud/submit_vertex_job.sh
+   ```
+   - Uploads `training/data/tx_aml_dataset.jsonl` to `gs://$BUCKET/data/...`
+   - Builds `cloud/Dockerfile` via Cloud Build using `cloud/cloudbuild.yaml`
+   - Pushes the trainer image to Artifact Registry (`.../finery-repo/aml-llm-trainer:<timestamp>` and `:latest`)
+   - Starts an A2 (A100) Vertex Custom Job with your dataset + hyperparameters.
+3. **Monitor**  
+   ```bash
+   gcloud ai custom-jobs stream-logs JOB_ID --region=$REGION
+   ```
+
+#### Faster incremental builds
+- A top-level `.dockerignore` keeps the build context small (excludes `.git`, `.venv`, datasets, etc.).
+- `cloud/cloudbuild.yaml` now **pulls the previous `:latest` trainer image** and passes it to `docker build --cache-from ...`, so dependency layers (CUDA, pip installs) are reused. Only changed source files trigger rebuilds.
+- The script automatically retags each successful build as `:latest` for future caching. To force a cold rebuild, override the cache tag:  
+  ```bash
+  CACHE_IMAGE_URI=us-central1-docker.pkg.dev/$PROJECT_ID/finery-repo/aml-llm-trainer:force \
+  ../cloud/submit_vertex_job.sh
+  ```
+- Artifact & bucket IAM bindings (Storage + Artifact Registry writer roles) are applied automatically to the Compute, Cloud Build, and Vertex service accounts on each run.
+
+> Need to reinstall dependencies inside the container? Run `INSTALL_DEPS=1 ../cloud/submit_vertex_job.sh`.
+
 ## ⚖️ License
 MIT License.  
 Ruleset is illustrative and **not** a production AML policy.

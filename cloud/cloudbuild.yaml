@@ -1,0 +1,33 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker pull "$_CACHE_IMAGE_URI" || true
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - "-f"
+      - cloud/Dockerfile
+      - "-t"
+      - "$_IMAGE_URI"
+      - "-t"
+      - "$_CACHE_IMAGE_URI"
+      - "--cache-from"
+      - "$_CACHE_IMAGE_URI"
+      - "."
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "$_IMAGE_URI"
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "$_CACHE_IMAGE_URI"
+
+images:
+  - "$_IMAGE_URI"
+  - "$_CACHE_IMAGE_URI"

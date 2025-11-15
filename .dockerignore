@@ -1,0 +1,10 @@
+# Exclude development artifacts from Docker build context
+.git
+.gitignore
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+training/data/
+rules/output/
+*.log

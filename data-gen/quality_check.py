@@ -159,7 +159,14 @@ def main():
         # Pattern coverage (search in reasons + fired)
         union_texts = (reasons or []) + (fired or [])
         for pname, needles in PATTERNS.items():
-            if contains_any(union_texts, tuple(n.upper() for n in needles)):
+            # Special handling for KYC, which is a fact, not always a reason/rule
+            is_hit = False
+            if pname == "KYC_UNVERIFIED":
+                if kyc is False:
+                    is_hit = True
+            elif contains_any(union_texts, tuple(n.upper() for n in needles)):
+                is_hit = True
+            if is_hit:
                 pattern_hits[pname] += 1
                 pattern_decision[pname][decision] += 1
                 shard_patterns[shard_name][pname] += 1

@@ -177,12 +177,16 @@ def gen_odd_hour_txs(rng, avg_amt, avg_per_day):
     window_days = rng.uniform(0.5, 1.5)
     lam = max(0.5, avg_per_day * window_days)
     n = max(1, int(random_poisson(rng, lam)))
+    # To avoid shortcut learning, sometimes generate less suspicious odd-hour activity
+    # that might be labeled CLEAR by the rules engine.
+    is_benign = rng.random() < 0.40  # Increased from 0.25
+    amt_mu = avg_amt * rng.uniform(0.2, 0.8) if is_benign else avg_amt * rng.uniform(1.5, 3.0)
     txs = []
     for _ in range(n):
-        amt = round(clip(rng.gauss(avg_amt, 0.25 * avg_amt), 5.0, 6000.0), 2)
+        amt = round(clip(rng.gauss(amt_mu, 0.25 * amt_mu), 5.0, 6000.0), 2)
         txs.append(dict(
             tx_id=f"T{rng.randint(100000,999999)}",
-            timestamp=rand_ts(rng, days_back=2, night=True),
+            timestamp=rand_ts(rng, days_back=1, night=True),
             amount=amt, currency="CAD",
             direction=rng.choice(["in","out"]),
             channel=rng.choice(["online","atm"]),
@@ -193,8 +197,8 @@ def gen_odd_hour_txs(rng, avg_amt, avg_per_day):
     return txs
 
 def make_case(rng):
-    # Randomly decide to force some KYC-unverified to ensure coverage (~2-5%)
-    force_kyc = False if rng.random() < 0.05 else None
+    # Ensure coverage of KYC-unverified cases across all scenarios.
+    force_kyc = False if rng.random() < 0.08 else None
 
     person_base = sample_profile(rng, force_kyc=force_kyc)
     scenario = pick_scenario(rng)
@@ -275,7 +279,10 @@ def clean_labeled(labeled):
     fired    = labeled.get("fired_rules") or labeled.get("rules") or []
 
     dec = (decision.get("aml_decision") or "").upper()
-    esc = CANON_ESC.get(dec, decision.get("escalation_level"))
+    # Use canonical mapping, falling back to original if it exists, otherwise None
+    esc = CANON_ESC.get(dec)
+    if esc is None:
+        esc = decision.get("escalation_level")
     reasons = decision.get("reasons") or []
 
     # If reasons are duplicated labels (e.g., ["LARGE_WIRE","LARGE_WIRE"]), dedup for training
