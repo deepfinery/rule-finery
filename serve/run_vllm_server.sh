@@ -7,12 +7,15 @@ BASE_MODEL_ID="${BASE_MODEL_ID:-meta-llama/Llama-3.2-3B-Instruct}"
 ADAPTER_DIR="${ADAPTER_DIR:-$SCRIPT_DIR/artifacts}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
+SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-$BASE_MODEL_ID}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-2048}"
 GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.9}"
 TP_SIZE="${TP_SIZE:-1}"
 HF_TOKEN="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
 VLLM_DEVICE="${VLLM_DEVICE:-gpu}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
+RUN_IN_BACKGROUND="${RUN_IN_BACKGROUND:-false}"
+LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/vllm_server.log}"
 
 if [[ ! -d "$ADAPTER_DIR" ]]; then
   echo "Adapter directory not found: $ADAPTER_DIR" >&2
@@ -28,10 +31,11 @@ fi
 export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
 
-CMD=(python -m vllm.entrypoints.api_server
+CMD=(python -m vllm.entrypoints.openai.api_server
   --model "$BASE_MODEL_ID"
   --host "$HOST"
   --port "$PORT"
+  --served-model-name "$SERVED_MODEL_NAME"
   --max-model-len "$MAX_MODEL_LEN"
   --gpu-memory-utilization "$GPU_MEM_UTIL"
   --tensor-parallel-size "$TP_SIZE"
@@ -39,7 +43,7 @@ CMD=(python -m vllm.entrypoints.api_server
   --quantization bitsandbytes
   --trust-remote-code
   --enable-lora
-  --qlora-adapter-name-or-path "${ADAPTER_DIR}"
+  --lora-modules "aml-qlora=${ADAPTER_DIR}"
 )
 
 if [[ "${ENFORCE_EAGER,,}" == "true" ]]; then
@@ -65,4 +69,10 @@ echo "  TP size:      $TP_SIZE"
 echo "  Device mode:  $VLLM_DEVICE"
 echo "  Extra args:   ${VLLM_EXTRA_ARGS:-<none>}"
 
-exec "${CMD[@]}"
+if [[ "${RUN_IN_BACKGROUND,,}" == "true" ]]; then
+  mkdir -p "$(dirname "$LOG_FILE")"
+  nohup "${CMD[@]}" >"$LOG_FILE" 2>&1 &
+  echo "vLLM server started in background (PID $!). Logs: $LOG_FILE"
+else
+  exec "${CMD[@]}"
+fi
