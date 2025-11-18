@@ -12,6 +12,7 @@ GPU_MEM_UTIL="${GPU_MEM_UTIL:-0.9}"
 TP_SIZE="${TP_SIZE:-1}"
 HF_TOKEN="${HF_TOKEN:-${HUGGING_FACE_HUB_TOKEN:-}}"
 VLLM_DEVICE="${VLLM_DEVICE:-gpu}"
+ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 
 if [[ ! -d "$ADAPTER_DIR" ]]; then
   echo "Adapter directory not found: $ADAPTER_DIR" >&2
@@ -40,6 +41,10 @@ CMD=(python -m vllm.entrypoints.api_server
   --enable-lora
   --qlora-adapter-name-or-path "aml-qlora=${ADAPTER_DIR}"
 )
+
+if [[ "${ENFORCE_EAGER,,}" == "true" ]]; then
+  CMD+=(--enforce-eager)
+fi
 
 if [[ "$VLLM_DEVICE" == "cpu" ]]; then
   CMD+=(--device cpu --enforce-eager)
