@@ -16,6 +16,7 @@ VLLM_DEVICE="${VLLM_DEVICE:-gpu}"
 ENFORCE_EAGER="${ENFORCE_EAGER:-true}"
 RUN_IN_BACKGROUND="${RUN_IN_BACKGROUND:-false}"
 LOG_FILE="${LOG_FILE:-$SCRIPT_DIR/vllm_server.log}"
+MAX_LORA_RANK="${MAX_LORA_RANK:-32}"
 
 if [[ ! -d "$ADAPTER_DIR" ]]; then
   echo "Adapter directory not found: $ADAPTER_DIR" >&2
@@ -43,6 +44,7 @@ CMD=(python -m vllm.entrypoints.openai.api_server
   --quantization bitsandbytes
   --trust-remote-code
   --enable-lora
+  --max-lora-rank "$MAX_LORA_RANK"
   --lora-modules "aml-qlora=${ADAPTER_DIR}"
 )
 
