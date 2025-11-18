@@ -34,6 +34,8 @@ CMD=(python -m vllm.entrypoints.api_server
   --max-model-len "$MAX_MODEL_LEN"
   --gpu-memory-utilization "$GPU_MEM_UTIL"
   --tensor-parallel-size "$TP_SIZE"
+  --load-format bitsandbytes
+  --quantization bitsandbytes
   --trust-remote-code
   --enable-lora
   --qlora-adapter-name-or-path "aml-qlora=${ADAPTER_DIR}"
