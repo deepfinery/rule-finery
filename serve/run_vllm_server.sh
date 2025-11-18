@@ -39,7 +39,7 @@ CMD=(python -m vllm.entrypoints.api_server
   --quantization bitsandbytes
   --trust-remote-code
   --enable-lora
-  --qlora-adapter-name-or-path "aml-qlora=${ADAPTER_DIR}"
+  --qlora-adapter-name-or-path "${ADAPTER_DIR}"
 )
 
 if [[ "${ENFORCE_EAGER,,}" == "true" ]]; then
