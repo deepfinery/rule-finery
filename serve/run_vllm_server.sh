@@ -35,7 +35,6 @@ CMD=(python -m vllm.entrypoints.api_server
   --gpu-memory-utilization "$GPU_MEM_UTIL"
   --tensor-parallel-size "$TP_SIZE"
   --trust-remote-code
-  --disable-log-requests "False"
   --enable-lora
   --lora-modules "aml-qlora=${ADAPTER_DIR}"
 )
