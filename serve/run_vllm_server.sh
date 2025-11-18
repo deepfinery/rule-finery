@@ -36,7 +36,7 @@ CMD=(python -m vllm.entrypoints.api_server
   --tensor-parallel-size "$TP_SIZE"
   --trust-remote-code
   --enable-lora
-  --lora-modules "aml-qlora=${ADAPTER_DIR}"
+  --qlora-adapter-name-or-path "aml-qlora=${ADAPTER_DIR}"
 )
 
 if [[ "$VLLM_DEVICE" == "cpu" ]]; then
