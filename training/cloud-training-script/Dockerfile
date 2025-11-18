@@ -11,10 +11,10 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY training/requirements.txt /tmp/requirements.txt
+COPY training/local-training-scripts/requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install -r /tmp/requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
 
 COPY . /app
 
-ENTRYPOINT ["python3", "-m", "cloud.gcp_entry"]
+ENTRYPOINT ["python3", "training/cloud-training-script/gcp_entry.py"]

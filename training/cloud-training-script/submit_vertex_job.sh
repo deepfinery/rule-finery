@@ -8,7 +8,7 @@ if ! command -v gcloud >/dev/null 2>&1; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 if [[ -f "$REPO_ROOT/.env" ]]; then
   set -a
@@ -22,7 +22,7 @@ JOB_NAME="${JOB_NAME:-aml-llm-qlora-$(date +%Y%m%d-%H%M%S)}"
 BUCKET="${BUCKET:-finery-training}"
 IMAGE_URI="${IMAGE_URI:-}"
 CLOUDSDK_CONTAINER_BUILDING_BACKEND="${CLOUDSDK_CONTAINER_BUILDING_BACKEND:-CLOUD_BUILD}"
-LOCAL_DATASET_PATH="${LOCAL_DATASET_PATH:-$REPO_ROOT/training/data/tx_aml_dataset.jsonl}"
+LOCAL_DATASET_PATH="${LOCAL_DATASET_PATH:-$REPO_ROOT/data-gen/dataset/tx_aml_dataset.jsonl}"
 DATASET_GCS_PATH="${DATASET_GCS_PATH:-}"
 OUTPUT_GCS_PATH="${OUTPUT_GCS_PATH:-}"
 BUILD_IMAGE_TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -105,7 +105,7 @@ echo "Building custom training image..."
 echo "  Context: $REPO_ROOT"
 echo "  Tag:     $BUILD_IMAGE_URI"
 gcloud builds submit "$REPO_ROOT" \
-  --config="$REPO_ROOT/cloud/cloudbuild.yaml" \
+  --config="$REPO_ROOT/training/cloud-training-script/cloudbuild.yaml" \
   --gcs-source-staging-dir="$BUILD_STAGING_DIR" \
   --project="$PROJECT_ID" \
   --substitutions="_IMAGE_URI=${BUILD_IMAGE_URI},_CACHE_IMAGE_URI=${CACHE_IMAGE_URI}"
@@ -125,6 +125,7 @@ workerPoolSpecs:
     imageUri: ${EFFECTIVE_IMAGE}
     args:
     - '--dataset_file=${DATASET_GCS_PATH}'
+    - '--method=qlora'
     - '--output_dir=/tmp/model'
     - '--upload_output_to=${OUTPUT_GCS_PATH}'
     - '--max_length=2048'

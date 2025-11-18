@@ -26,7 +26,7 @@ PATTERNS = {
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Quality checks for AML distillation dataset")
-    ap.add_argument("path", help="JSONL file or a glob of shard files (e.g., data/_shards_v2/shard_*.jsonl)")
+    ap.add_argument("path", help="JSONL file or a glob of shard files (e.g., dataset/_shards_v3/shard_*.jsonl)")
     ap.add_argument("--max", type=int, default=None, help="Optional max rows to scan")
     ap.add_argument("--dump-json", default=None, help="Optional path to write a JSON summary")
     return ap.parse_args()

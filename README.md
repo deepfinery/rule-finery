@@ -28,19 +28,18 @@ LLM “Rule Engine” (predicts AML decision + escalation)
 ## 📂 Directory Layout
 ```
 aml-llm/
-├── rules/
-│   └── tx_aml.drl
-├── drools-runner/
-│   ├── pom.xml
-│   └── src/main/java/demo/Runner.java
-├── data/
+├── data-gen/
+│   ├── dataset/
+│   ├── drool-runner/        # Java → Drools executable
 │   ├── make_tx_aml_dataset.py
-│   ├── split_dataset.py
-│   └── tx_aml_dataset.jsonl
-└── training/
-    ├── requirements.txt
-    ├── map_facts_to_text.py
-    └── train_qlora.py
+│   ├── quality_check.py
+│   ├── rules/
+│   └── split_dataset.py
+├── training/
+│   ├── cloud-training-script/   # Vertex AI helper scripts + Docker image
+│   ├── common/                  # Shared trainers (LoRA, QLoRA, full fine-tune)
+│   └── local-training-scripts/  # Sample datasets + helper shells
+└── serve/                       # vLLM deployment assets
 ```
 
 ---
@@ -56,37 +55,41 @@ aml-llm/
 
 ## 🏗️ 1. Build the Drools Runner
 ```bash
-cd drools-runner
+cd data-gen/drool-runner
 mvn -q -DskipTests package
 # → target/drools-runner-1.0.0-shaded.jar
 ```
 
-Test once:
+Smoke-test by piping any transaction JSON (or point to a file):
 ```bash
-java -jar target/drools-runner-1.0.0-shaded.jar ../rules/tx_aml.drl ../data/sample.json
+cat <<'JSON' | java -jar target/drools-runner-1.0.0-shaded.jar ../rules/tx_aml.drl -
+{"person":{"person_id":"P1","segment":"retail","pep":false,"sanctions_hit":false,"home_country":"US","kyc_verified":true,"avg_tx_amount_90d":320,"avg_tx_per_day_90d":1.2},"account":{"account_id":"A1","opened_days_ago":400},"recent_tx":[{"tx_id":"T1","timestamp":"2025-11-12T10:42:00Z","amount":4200,"currency":"USD","direction":"out","channel":"wire","counterparty_country":"CA","counterparty_id":"CP10","merchant_category":null}]}
+JSON
 ```
 
 ---
 
 ## 🧮 2. Generate Dataset
 ```bash
-cd data
-python make_tx_aml_dataset.py 50000 tx_aml_dataset.jsonl
-python split_dataset.py tx_aml_dataset.jsonl
+cd data-gen
+python make_tx_aml_dataset.py 50000 dataset/tx_aml_dataset.jsonl
+python split_dataset.py dataset/tx_aml_dataset.jsonl
 ```
 Expected sizes: 80 % train | 10 % val | 10 % test.
 
 ---
 
-## 🧠 3. Fine-Tune the Model (QLoRA)
+## 🧠 3. Fine-Tune the Model
 ```bash
-cd training
-pip install -r requirements.txt
-export MODEL_ID="meta-llama/Llama-3.2-3B-Instruct"
-accelerate launch train_qlora.py
+pip install -r training/local-training-scripts/requirements.txt
+python training/common/train.py \
+  --method qlora \
+  --model_id meta-llama/Llama-3.2-3B-Instruct \
+  --dataset_file data-gen/dataset/tx_aml_dataset.jsonl \
+  --output_dir training/local-training-scripts/my-finetuned-model
 ```
 
-This trains a 4-bit QLoRA adapter (~200 MB) on your dataset using 1× H100.
+`--method` supports `qlora`, `lora`, or `full` (no adapters). QLoRA loads the base model in 4-bit with `bitsandbytes`, LoRA keeps the base model in bf16/fp16 while training adapters, and `full` updates every parameter (requires much larger GPUs). Adjust the remaining CLI flags (batch size, epochs, etc.) as needed.
 
 ---
 
@@ -152,7 +155,7 @@ export BUCKET=finery-training
 ```
 
 ### Vertex AI workflow (GPU fine-tuning)
-The repo ships with `cloud/submit_vertex_job.sh`, which automates dataset upload, container build, and Vertex A100 submission:
+The repo ships with `training/cloud-training-script/submit_vertex_job.sh`, which automates dataset upload, container build, and Vertex A100 submission:
 
 1. **Prepare**  
    ```bash
@@ -162,11 +165,11 @@ The repo ships with `cloud/submit_vertex_job.sh`, which automates dataset upload
    ```
 2. **Run the helper**  
    ```bash
-   cd training
-   ../cloud/submit_vertex_job.sh
+   cd training/cloud-training-script
+   ./submit_vertex_job.sh
    ```
-   - Uploads `training/data/tx_aml_dataset.jsonl` to `gs://$BUCKET/data/...`
-   - Builds `cloud/Dockerfile` via Cloud Build using `cloud/cloudbuild.yaml`
+   - Uploads `data-gen/dataset/tx_aml_dataset.jsonl` to `gs://$BUCKET/data/...`
+   - Builds `training/cloud-training-script/Dockerfile` via Cloud Build using `training/cloud-training-script/cloudbuild.yaml`
    - Pushes the trainer image to Artifact Registry (`.../finery-repo/aml-llm-trainer:<timestamp>` and `:latest`)
    - Starts an A2 (A100) Vertex Custom Job with your dataset + hyperparameters.
 3. **Monitor**  
@@ -176,15 +179,15 @@ The repo ships with `cloud/submit_vertex_job.sh`, which automates dataset upload
 
 #### Faster incremental builds
 - A top-level `.dockerignore` keeps the build context small (excludes `.git`, `.venv`, datasets, etc.).
-- `cloud/cloudbuild.yaml` now **pulls the previous `:latest` trainer image** and passes it to `docker build --cache-from ...`, so dependency layers (CUDA, pip installs) are reused. Only changed source files trigger rebuilds.
+- `training/cloud-training-script/cloudbuild.yaml` now **pulls the previous `:latest` trainer image** and passes it to `docker build --cache-from ...`, so dependency layers (CUDA, pip installs) are reused. Only changed source files trigger rebuilds.
 - The script automatically retags each successful build as `:latest` for future caching. To force a cold rebuild, override the cache tag:  
   ```bash
   CACHE_IMAGE_URI=us-central1-docker.pkg.dev/$PROJECT_ID/finery-repo/aml-llm-trainer:force \
-  ../cloud/submit_vertex_job.sh
+  ./submit_vertex_job.sh
   ```
 - Artifact & bucket IAM bindings (Storage + Artifact Registry writer roles) are applied automatically to the Compute, Cloud Build, and Vertex service accounts on each run.
 
-> Need to reinstall dependencies inside the container? Run `INSTALL_DEPS=1 ../cloud/submit_vertex_job.sh`.
+> Need to reinstall dependencies inside the container? Run `INSTALL_DEPS=1 ./submit_vertex_job.sh`.
 
 ## ⚖️ License
 MIT License.  

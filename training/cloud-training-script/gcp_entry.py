@@ -5,9 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REQUIREMENTS = REPO_ROOT / "training" / "requirements.txt"
-TRAIN_SCRIPT = REPO_ROOT / "training" / "train_qlora.py"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+LOCAL_TRAIN_DIR = REPO_ROOT / "training" / "local-training-scripts"
+COMMON_DIR = REPO_ROOT / "training" / "common"
+REQUIREMENTS = LOCAL_TRAIN_DIR / "requirements.txt"
+TRAIN_SCRIPT = COMMON_DIR / "train.py"
 
 
 def main():

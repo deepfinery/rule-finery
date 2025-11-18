@@ -7,8 +7,8 @@ from collections import Counter
 
 # --- Paths ---
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-JAR  = ROOT / "drools-runner" / "target" / "drools-runner-1.0.0-shaded.jar"
-DRL  = ROOT / "rules" / "tx_aml.drl"
+JAR  = ROOT / "data-gen" / "drool-runner" / "target" / "drools-runner-1.0.0-shaded.jar"
+DRL  = ROOT / "data-gen" / "rules" / "tx_aml.drl"
 
 # --- Countries & scenarios ---
 SAFE = ["CA","US","GB","FR","DE","MX","IN","AE","ES","IT","SE","NL","JP","AU"]
@@ -359,7 +359,7 @@ def _worker(shard_idx, shard_targets, tmp_dir, base_seed, print_every=1000, safe
     return out_train, out_audit, dict(counts)
 
 # --- Main orchestration ---
-def main(total=200_000, out_path="data/tx_aml_dataset.jsonl", workers=None, seed=42):
+def main(total=200_000, out_path="dataset/tx_aml_dataset.jsonl", workers=None, seed=42):
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     tmp_dir = os.path.join(os.path.dirname(out_path) or ".", "_shards_v3")
     os.makedirs(tmp_dir, exist_ok=True)
@@ -407,7 +407,7 @@ def main(total=200_000, out_path="data/tx_aml_dataset.jsonl", workers=None, seed
 
 if __name__ == "__main__":
     total   = int(sys.argv[1]) if len(sys.argv) > 1 else 200_000
-    outp    = sys.argv[2] if len(sys.argv) > 2 else "data/tx_aml_dataset.jsonl"
+    outp    = sys.argv[2] if len(sys.argv) > 2 else "dataset/tx_aml_dataset.jsonl"
     workers = int(sys.argv[3]) if len(sys.argv) > 3 else None
     seed    = int(sys.argv[4]) if len(sys.argv) > 4 else 42
     main(total, outp, workers, seed)

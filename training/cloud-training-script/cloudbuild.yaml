@@ -10,7 +10,7 @@ steps:
     args:
       - build
       - "-f"
-      - cloud/Dockerfile
+      - training/cloud-training-script/Dockerfile
       - "-t"
       - "$_IMAGE_URI"
       - "-t"

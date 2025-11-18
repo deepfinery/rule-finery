@@ -1,7 +1,7 @@
 import json, random, sys
 
 random.seed(42)
-path = sys.argv[1] if len(sys.argv)>1 else "tx_aml_dataset.jsonl"
+path = sys.argv[1] if len(sys.argv)>1 else "dataset/tx_aml_dataset.jsonl"
 rows = [json.loads(l) for l in open(path)]
 random.shuffle(rows)
 n=len(rows); tr=int(0.8*n); va=int(0.1*n)
