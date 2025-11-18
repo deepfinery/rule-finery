@@ -101,7 +101,20 @@ curl -s http://localhost:8000/v1/chat/completions \
 
 Expect a deterministic JSON response describing the AML decision. For bare `v1/completions`, replace `messages` with `prompt`.
 
-## 6. Operational notes
+## 6. Benchmark the endpoint
+Use the new `benchmark/benchmark_endpoint.py` helper to replay the training dataset against the deployed endpoint. The script prints accuracy metrics, reasons F1, and latency stats. Example (run from the repo root):
+
+```bash
+python benchmark/benchmark_endpoint.py \
+  --dataset data-gen/dataset/tx_aml_dataset.jsonl \
+  --base-url http://18.118.130.132:8000 \
+  --model aml-qlora \
+  --limit 1000
+```
+
+Flags: `--skip` lets you shard the dataset, `--temperature` / `--max-tokens` tweak decoding, and `--verbose` prints per-case responses.
+
+## 7. Operational notes
 - **Autosave artifacts** under `/opt/aml-llm/serve/artifacts` to reuse across VM rebuilds. The `.gitignore` keeps these blobs out of Git.
 - **CPU mode** is only for sanity checks; throughput is <1 req/s. Prefer an NVIDIA GPU (L4 gives ~70 tok/s with this model).
 - **Monitoring** – The script prints Token/sec and request logs. For production, wrap the command in `systemd` or `supervisord`.

@@ -7,8 +7,8 @@ from collections import Counter
 
 # --- Paths ---
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-JAR  = ROOT / "data-gen" / "drool-runner" / "target" / "drools-runner-1.0.0-shaded.jar"
-DRL  = ROOT / "data-gen" / "rules" / "tx_aml.drl"
+JAR  = ROOT / "rule-engine" / "drool-runner" / "target" / "drools-runner-1.0.0-shaded.jar"
+DRL  = ROOT / "rule-engine" / "rules" / "tx_aml.drl"
 
 # --- Countries & scenarios ---
 SAFE = ["CA","US","GB","FR","DE","MX","IN","AE","ES","IT","SE","NL","JP","AU"]

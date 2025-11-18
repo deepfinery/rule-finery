@@ -30,11 +30,13 @@ LLM “Rule Engine” (predicts AML decision + escalation)
 aml-llm/
 ├── data-gen/
 │   ├── dataset/
-│   ├── drool-runner/        # Java → Drools executable
 │   ├── make_tx_aml_dataset.py
 │   ├── quality_check.py
-│   ├── rules/
 │   └── split_dataset.py
+├── rule-engine/             # Drools runner, rules, and HTTP service
+│   ├── drool-runner/
+│   ├── rules/
+│   └── drools_service.py
 ├── training/
 │   ├── cloud-training-script/   # Vertex AI helper scripts + Docker image
 │   ├── common/                  # Shared trainers (LoRA, QLoRA, full fine-tune)
@@ -55,10 +57,11 @@ aml-llm/
 
 ## 🏗️ 1. Build the Drools Runner
 ```bash
-cd data-gen/drool-runner
+cd rule-engine/drool-runner
 mvn -q -DskipTests package
 # → target/drools-runner-1.0.0-shaded.jar
 ```
+> The dataset generator (`data-gen/make_tx_aml_dataset.py`) shells out to this jar for each synthetic case. Build it once before creating new datasets. See `rule-engine/README.md` for details on the accompanying HTTP service used during benchmarking.
 
 Smoke-test by piping any transaction JSON (or point to a file):
 ```bash
