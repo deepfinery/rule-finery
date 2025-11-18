@@ -14,6 +14,13 @@ HF_TOKEN_ENV_KEYS = (
     "HUGGING_FACE_HUB_TOKEN",
     "HUGGINGFACEHUB_API_TOKEN",
 )
+SUPPORTED_FLASH_ATTN_IMPLEMENTATIONS = {
+    "flash_attention_2",
+    "flash_attention_3",
+    "kernels-community/flash-attn",
+    "kernels-community/flash-attn3",
+    "kernels-community/vllm-flash-attn3",
+}
 
 # Use a standard relative import
 from map_facts_to_text import row_to_example
@@ -96,6 +103,17 @@ def main():
     tok = AutoTokenizer.from_pretrained(args.model_id, token=hf_token, use_fast=True)
     tok.pad_token = tok.eos_token
 
+    packing_enabled = args.packing
+    if args.packing:
+        attn_impl = getattr(getattr(model, "config", None), "attn_implementation", None)
+        if attn_impl not in SUPPORTED_FLASH_ATTN_IMPLEMENTATIONS:
+            print(
+                "Packing requested but attention implementation "
+                f"{attn_impl!r} is not one of {sorted(SUPPORTED_FLASH_ATTN_IMPLEMENTATIONS)}. "
+                "Disabling packing to avoid flash-attn dependency issues."
+            )
+            packing_enabled = False
+
     try:
         import tensorboard  # noqa: F401
         report_to = ["tensorboard"]
@@ -113,7 +131,7 @@ def main():
     cfg = SFTConfig(
         output_dir=args.output_dir,
         max_length=args.max_length,
-        packing=args.packing,
+        packing=packing_enabled,
         per_device_train_batch_size=args.per_device_train_batch_size,
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -145,10 +163,6 @@ def main():
     if args.upload_output_to:
         upload_directory_to_gcs(args.output_dir, args.upload_output_to)
 
-if __name__ == "__main__":
-    main()
-
-
 def upload_directory_to_gcs(local_dir: str, gcs_uri: str) -> None:
     """Upload the contents of `local_dir` to the target GCS URI."""
     if not gcs_uri.startswith(GCS_SCHEME):
@@ -175,3 +189,7 @@ def upload_directory_to_gcs(local_dir: str, gcs_uri: str) -> None:
             blob = bucket.blob(blob_path)
             blob.upload_from_filename(local_path)
     print(f"Upload complete: {gcs_uri}")
+
+
+if __name__ == "__main__":
+    main()
