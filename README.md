@@ -106,6 +106,7 @@ Key knobs inside `make_tx_aml_dataset.py`:
 * **`common/train.py`** – Unified CLI with `--method` = `qlora`, `lora`, or `full`.
 * **`local-training-scripts/`** – Requirements + examples for single-GPU runs.
 * **`cloud-training-script/`** – Vertex AI helper (`submit_vertex_job.sh`) that builds the trainer image, uploads data to GCS, and launches A100/H100 jobs.
+* **`training-api/`** – Express REST wrapper that lets DeepFinery Studio kick off and monitor training jobs via HTTP.
 
 Typical local run:
 ```bash

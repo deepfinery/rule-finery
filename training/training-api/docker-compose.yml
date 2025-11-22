@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  training-api:
+    build:
+      context: ../..
+      dockerfile: training/training-api/Dockerfile
+    environment:
+      - PORT=4000
+      - DEFAULT_TRAINING_BACKEND=kubernetes
+      # Point to the kubeconfig mounted below (or set to Vertex envs instead).
+      - K8S_KUBECONFIG=/kube/config
+      # - K8S_CONTEXT=your-context
+      # - K8S_TRAINING_IMAGE=ghcr.io/your-org/trainer:latest
+      # - K8S_APPLY=1
+      # Vertex example:
+      # - VERTEX_PROJECT=your-project
+      # - VERTEX_REGION=us-central1
+      # - VERTEX_IMAGE_URI=us-central1-docker.pkg.dev/your-project/finery-repo/aml-llm-trainer:latest
+      # - VERTEX_SUBMIT=1
+    ports:
+      - "4000:4000"
+    volumes:
+      # Mount kubeconfig for kubectl access
+      - ~/.kube/config:/kube/config:ro
+      # Optional: mount repo for live edits while developing
+      - ../..:/app

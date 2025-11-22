@@ -1,0 +1,14 @@
+{
+  "name": "training-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REST API wrapper around aml-llm training scripts",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "uuid": "^9.0.1"
+  }
+}
