@@ -6,7 +6,9 @@ test.txt
 reports
 inst.txt
 .vscode
-serve/artifacts/
-serve/.venv/
-serve/vllm.log
-serve/vllm_server.log
+serve/serve-llm/artifacts/
+serve/serve-llm/.venv/
+serve/serve-llm/vllm.log
+serve/serve-llm/vllm_server.log
+serve/serve-transformer/.venv/
+launch.txt

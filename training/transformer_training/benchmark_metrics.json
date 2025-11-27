@@ -1,0 +1,14 @@
+{
+  "checkpoint": "training/transformer_training/local_artifacts/transformer_multihead.pt",
+  "dataset": "data-gen/dataset/tx_aml_dataset.jsonl",
+  "metrics": {
+    "decision_accuracy": 0.99185,
+    "escalation_accuracy": 0.99165,
+    "reason_precision": 0.9997052538501215,
+    "reason_recall": 0.9735916756368855,
+    "reason_f1": 0.9864756780338835,
+    "evaluated": 20000,
+    "avg_latency_sec": 4.4663191699510204e-05,
+    "throughput_samples_per_sec": 22389.801578174414
+  }
+}

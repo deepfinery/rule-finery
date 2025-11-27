@@ -1,1 +1,0 @@
-AIRPORT_LIST = []

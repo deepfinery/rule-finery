@@ -55,19 +55,19 @@ export BASE_MODEL_ID=meta-llama/Llama-3.2-3B-Instruct
    ```
 3. **Fine-tune locally (QLoRA)**
    ```bash
-   pip install -r training/local-training-scripts/requirements.txt
-   python training/common/train.py \
+   pip install -r training/llm_training/local-training-scripts/requirements.txt
+   python -m training.llm_training.common.train \
      --method qlora \
      --model_id $BASE_MODEL_ID \
      --dataset_file data-gen/dataset/tx_aml_dataset.jsonl \
-     --output_dir training/local-training-scripts/my-finetuned-model
+     --output_dir training/llm_training/local-training-scripts/my-finetuned-model
    ```
 4. **Serve with vLLM**
    ```bash
-   pip install -r serve/requirements.txt
+  pip install -r serve/serve-llm/requirements.txt
    export HF_TOKEN=hf_xxx
-   export ADAPTER_DIR=/opt/aml-llm/serve/artifacts   # downloaded adapter path
-   ./serve/run_vllm_server.sh                        # exposes http://0.0.0.0:8000/v1
+  export ADAPTER_DIR=/opt/aml-llm/serve/serve-llm/artifacts   # downloaded adapter path
+  ./serve/serve-llm/run_vllm_server.sh                        # exposes http://0.0.0.0:8000/v1
    ```
 5. **Benchmark the endpoint**
    ```bash
@@ -104,24 +104,54 @@ Key knobs inside `make_tx_aml_dataset.py`:
 
 ### 3. Training (`training/`)
 * **`common/train.py`** – Unified CLI with `--method` = `qlora`, `lora`, or `full`.
-* **`local-training-scripts/`** – Requirements + examples for single-GPU runs.
-* **`cloud-training-script/`** – Vertex AI helper (`submit_vertex_job.sh`) that builds the trainer image, uploads data to GCS, and launches A100/H100 jobs.
+  * **`llm_training/local-training-scripts/`** – Requirements + examples for single-GPU runs.
+  * **`transformer_training/`** – From-scratch structured transformer, multi-head classifier.
+* **`cloud-training-script/`** – Vertex AI helpers (`submit_vertex_job.sh`, `submit_transformer_job.sh`) that build trainer images, upload data to GCS, and launch A100/H100 jobs.
 * **`training-api/`** – Express REST wrapper that lets DeepFinery Studio kick off and monitor training jobs via HTTP.
 
 Typical local run:
 ```bash
-python training/common/train.py \
+python -m training.llm_training.common.train \
   --method qlora \
   --model_id $BASE_MODEL_ID \
   --dataset_file data-gen/dataset/tx_aml_dataset.jsonl \
   --output_dir my-finetuned-model \
   --num_train_epochs 2 \
   --per_device_train_batch_size 4
+
+### Train the structured transformer (multi-head)
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r training/transformer_training/requirements.txt
+
+python -m training.transformer_training.train \
+  --dataset_file data-gen/dataset/tx_aml_dataset.jsonl \
+  --output_dir training/transformer_training/artifacts \
+  --epochs 5 \
+  --batch_size 64
+
+# Docker smoke test (one epoch, local GPU)
+cd training/cloud-training-script
+./run_transformer_local.sh
+
+# Reuse an existing local image without rebuilding
+./run_transformer_local_fast.sh
+
+# Vertex AI one-click transformer training
+cd training/cloud-training-script
+./submit_transformer_job.sh
+
+# Serve the trained transformer locally
+python serve/serve-transformer/serve_transformer.py \
+  --checkpoint training/transformer_training/artifacts/transformer_multihead.pt \
+  --host 0.0.0.0 \
+  --port 9000
 ```
 
 Vertex workflow highlights:
 1. `gcloud auth login` + `gcloud config set project ...`
-2. `cd training/cloud-training-script && ./submit_vertex_job.sh`
+2. `cd training/cloud-training-script && ./submit_vertex_job.sh` (LLM LoRA pipeline) or `./submit_transformer_job.sh` (structured transformer pipeline).
 3. Monitor with `gcloud ai custom-jobs stream-logs JOB_ID --region=$REGION`
 
 ### 4. Serving (`serve/`)
@@ -151,6 +181,7 @@ curl -s http://<host>:8000/v1/chat/completions \
 * **`benchmark_drools.py`** – Replays the dataset against the Drools HTTP service to capture baseline metrics.
 * **`drools_service.py`** (in `rule-engine/`) – FastAPI proxy so the rule engine can be benchmarked like any other HTTP service.
 * **`compare_benchmarks.py`** – Consumes the JSON summaries and prints a table (decision accuracy, avg latency, throughput, exact match).
+* **`run_transformer_vs_drools.sh`** – Generates fresh cases, times Drools and the structured transformer side-by-side, and writes accuracy/latency metrics.
 
 Workflow:
 ```bash
@@ -167,6 +198,12 @@ python benchmark/benchmark_drools.py \
 
 # 3) Compare
 python benchmark/compare_benchmarks.py reports/llm.json reports/drools.json
+
+# 4) Transformer vs Drools head-to-head (new cases)
+cd benchmark
+./run_transformer_vs_drools.sh \
+  SAMPLES=1000 \
+  CHECKPOINT=../training/transformer_training/local_artifacts/transformer_multihead.pt
 ```
 
 ---
@@ -179,9 +216,9 @@ rule-engine/drool-runner (shaded jar)
    ↓  subprocess
 data-gen/make_tx_aml_dataset.py (JSONL + audit)
    ↓
-training/common/train.py (LoRA/QLoRA/full)
+training/llm_training/common/train.py (LoRA/QLoRA/full)
    ↓
-serve/run_vllm_server.sh (vLLM OpenAI API, LoRA adapter)
+serve/serve-llm/run_vllm_server.sh (vLLM OpenAI API, LoRA adapter)
    ↓
 benchmark/{benchmark_endpoint, benchmark_drools}.py + compare
 ```

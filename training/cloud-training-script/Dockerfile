@@ -11,9 +11,13 @@ RUN apt-get update && \
 
 WORKDIR /app
 
-COPY training/local-training-scripts/requirements.txt /tmp/requirements.txt
+COPY training/llm_training/local-training-scripts/requirements.txt /tmp/llm_requirements.txt
+COPY training/transformer_training/requirements.txt /tmp/transformer_requirements.txt
 RUN python3 -m pip install --upgrade pip && \
-    python3 -m pip install -r /tmp/requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+    python3 -m pip install \
+      -r /tmp/llm_requirements.txt \
+      -r /tmp/transformer_requirements.txt \
+      --extra-index-url https://download.pytorch.org/whl/cu121
 
 COPY . /app
 

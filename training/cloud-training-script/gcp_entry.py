@@ -6,13 +6,14 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LOCAL_TRAIN_DIR = REPO_ROOT / "training" / "local-training-scripts"
-COMMON_DIR = REPO_ROOT / "training" / "common"
+LOCAL_TRAIN_DIR = REPO_ROOT / "training" / "llm_training" / "local-training-scripts"
 REQUIREMENTS = LOCAL_TRAIN_DIR / "requirements.txt"
-TRAIN_MODULE = "training.common.train"
 
 
 def main():
+    train_module = os.environ.get(
+        "TRAIN_ENTRY_MODULE", "training.llm_training.common.train"
+    )
     install_flag = os.environ.get("INSTALL_DEPS", "0").lower()
     if install_flag in {"1", "true", "yes"}:
         subprocess.run(
@@ -26,7 +27,7 @@ def main():
     else:
         os.environ["PYTHONPATH"] = extra_path
 
-    cmd = [sys.executable, "-m", TRAIN_MODULE, *sys.argv[1:]]
+    cmd = [sys.executable, "-m", train_module, *sys.argv[1:]]
     subprocess.run(cmd, check=True)
 
 
