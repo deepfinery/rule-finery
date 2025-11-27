@@ -1,0 +1,17 @@
+{
+  "checkpoint": "/home/ubuntu/rule-finery/training/transformer_training/local_artifacts/transformer_multihead.pt",
+  "drools_jar": "/home/ubuntu/rule-finery/rule-engine/drool-runner/target/drools-runner-1.0.0-shaded.jar",
+  "samples": 1000,
+  "metrics": {
+    "samples": 1000,
+    "drools_avg_latency_sec": 1.2633194039709634,
+    "drools_throughput_per_sec": 0.7915654559383182,
+    "transformer_avg_latency_sec": 0.0038097947130281682,
+    "transformer_throughput_per_sec": 262.48133438275534,
+    "decision_accuracy": 0.994,
+    "escalation_accuracy": 0.994,
+    "reason_precision": 1.0,
+    "reason_recall": 0.9792663476874003,
+    "reason_f1": 0.9895245769540694
+  }
+}
