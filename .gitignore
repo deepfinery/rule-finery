@@ -6,4 +6,7 @@ test.txt
 reports
 inst.txt
 .vscode
-
+serve/artifacts/
+serve/.venv/
+serve/vllm.log
+serve/vllm_server.log

@@ -3,6 +3,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-python}"
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "Warning: '$PYTHON_BIN' not found, trying python3" >&2
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "python3 is also not available; install Python before running the server." >&2
+    exit 1
+  fi
+fi
+
+PYTHONPATH="${PYTHONPATH:+$PYTHONPATH:}$SCRIPT_DIR"
+export PYTHONPATH
 BASE_MODEL_ID="${BASE_MODEL_ID:-meta-llama/Llama-3.2-3B-Instruct}"
 ADAPTER_DIR="${ADAPTER_DIR:-$SCRIPT_DIR/artifacts}"
 HOST="${HOST:-0.0.0.0}"
@@ -32,7 +45,7 @@ fi
 export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
 export HF_HUB_ENABLE_HF_TRANSFER="${HF_HUB_ENABLE_HF_TRANSFER:-1}"
 
-CMD=(python -m vllm.entrypoints.openai.api_server
+CMD=("$PYTHON_BIN" -m vllm.entrypoints.openai.api_server
   --model "$BASE_MODEL_ID"
   --host "$HOST"
   --port "$PORT"
