@@ -4,4 +4,6 @@ dataset
 .env
 test.txt
 reports
+inst.txt
+.vscode
 
