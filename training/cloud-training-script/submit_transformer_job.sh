@@ -30,8 +30,8 @@ BUILD_IMAGE_URI="${BUILD_IMAGE_URI:-us-central1-docker.pkg.dev/${PROJECT_ID}/fin
 CACHE_IMAGE_URI="${CACHE_IMAGE_URI:-us-central1-docker.pkg.dev/${PROJECT_ID}/finery-repo/aml-transformer-trainer:latest}"
 BUILD_STAGING_DIR="${BUILD_STAGING_DIR:-gs://${BUCKET}/build-artifacts}"
 BUCKET_URI="gs://${BUCKET}"
-TRANSFORMER_EPOCHS="${TRANSFORMER_EPOCHS:-12}"
-TRANSFORMER_BATCH_SIZE="${TRANSFORMER_BATCH_SIZE:-128}"
+TRANSFORMER_EPOCHS="${TRANSFORMER_EPOCHS:-10}"
+TRANSFORMER_BATCH_SIZE="${TRANSFORMER_BATCH_SIZE:-64}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 if [[ -z "$PROJECT_ID" ]]; then
@@ -125,13 +125,6 @@ template = f"""workerPoolSpecs:
     - '--batch_size={os.environ["TRANSFORMER_BATCH_SIZE"]}'
     - '--learning_rate=3e-4'
     - '--max_transactions=20'
-    - '--d_model=512'
-    - '--num_heads=8'
-    - '--num_layers=8'
-    - '--dim_feedforward=1024'
-    - '--decision_loss_weight=1.5'
-    - '--escalation_loss_weight=1.0'
-    - '--reason_loss_weight=1.25'
     - '--device=cuda'
     - '--val_ratio=0.1'
     env:
