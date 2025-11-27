@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LOCAL_TRAIN_DIR = REPO_ROOT / "training" / "local-training-scripts"
 COMMON_DIR = REPO_ROOT / "training" / "common"
 REQUIREMENTS = LOCAL_TRAIN_DIR / "requirements.txt"
-TRAIN_SCRIPT = COMMON_DIR / "train.py"
+TRAIN_MODULE = "training.common.train"
 
 
 def main():
@@ -19,7 +19,14 @@ def main():
             [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS)],
             check=True,
         )
-    cmd = [sys.executable, str(TRAIN_SCRIPT), *sys.argv[1:]]
+    extra_path = str(REPO_ROOT)
+    existing = os.environ.get("PYTHONPATH")
+    if existing:
+        os.environ["PYTHONPATH"] = f"{extra_path}:{existing}"
+    else:
+        os.environ["PYTHONPATH"] = extra_path
+
+    cmd = [sys.executable, "-m", TRAIN_MODULE, *sys.argv[1:]]
     subprocess.run(cmd, check=True)
 
 

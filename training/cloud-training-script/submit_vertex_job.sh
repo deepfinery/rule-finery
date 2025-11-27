@@ -30,6 +30,18 @@ BUILD_IMAGE_URI="${BUILD_IMAGE_URI:-us-central1-docker.pkg.dev/${PROJECT_ID}/fin
 CACHE_IMAGE_URI="${CACHE_IMAGE_URI:-us-central1-docker.pkg.dev/${PROJECT_ID}/finery-repo/aml-llm-trainer:latest}"
 BUILD_STAGING_DIR="${BUILD_STAGING_DIR:-gs://${BUCKET}/build-artifacts}"
 BUCKET_URI="gs://${BUCKET}"
+MODEL_ID="${MODEL_ID:-meta-llama/Llama-3.1-8B-Instruct}"
+NUM_TRAIN_EPOCHS="${NUM_TRAIN_EPOCHS:-10}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  else
+    echo "python3 (or python) is required to render the job spec." >&2
+    exit 1
+  fi
+fi
 
 if [[ -z "$PROJECT_ID" ]]; then
   echo "Set PROJECT_ID env var or configure gcloud (gcloud config set project YOUR_PROJECT)." >&2
@@ -114,27 +126,34 @@ EFFECTIVE_IMAGE="${IMAGE_URI:-$BUILD_IMAGE_URI}"
 JOB_SPEC_FILE="$(mktemp)"
 trap 'rm -f "$JOB_SPEC_FILE"' EXIT
 
-cat > "$JOB_SPEC_FILE" <<EOF
-workerPoolSpecs:
+export EFFECTIVE_IMAGE DATASET_GCS_PATH OUTPUT_GCS_PATH MODEL_ID NUM_TRAIN_EPOCHS HF_TOKEN_VALUE
+
+$PYTHON_BIN - "$JOB_SPEC_FILE" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+template = f"""workerPoolSpecs:
 - machineSpec:
-    machineType: a2-highgpu-1g
-    acceleratorType: NVIDIA_TESLA_A100
+    machineType: a3-highgpu-1g
+    acceleratorType: NVIDIA_H100_80GB
     acceleratorCount: 1
   replicaCount: 1
   containerSpec:
-    imageUri: ${EFFECTIVE_IMAGE}
+    imageUri: {os.environ["EFFECTIVE_IMAGE"]}
     args:
-    - '--dataset_file=${DATASET_GCS_PATH}'
+    - '--dataset_file={os.environ["DATASET_GCS_PATH"]}'
+    - '--model_id={os.environ["MODEL_ID"]}'
     - '--method=qlora'
     - '--output_dir=/tmp/model'
-    - '--upload_output_to=${OUTPUT_GCS_PATH}'
+    - '--upload_output_to={os.environ["OUTPUT_GCS_PATH"]}'
     - '--max_length=2048'
     - '--packing'
     - '--per_device_train_batch_size=4'
     - '--per_device_eval_batch_size=4'
     - '--gradient_accumulation_steps=2'
     - '--learning_rate=1e-4'
-    - '--num_train_epochs=3'
+    - '--num_train_epochs={os.environ["NUM_TRAIN_EPOCHS"]}'
     - '--logging_steps=50'
     - '--eval_steps=200'
     - '--save_steps=200'
@@ -142,8 +161,11 @@ workerPoolSpecs:
     - '--bf16'
     env:
     - name: HUGGING_FACE_HUB_TOKEN
-      value: ${HF_TOKEN_VALUE}
-EOF
+      value: {os.environ["HF_TOKEN_VALUE"]}
+"""
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write(template)
+PY
 
 echo "Submitting Vertex AI CustomJob:"
 echo "  Project:   $PROJECT_ID"
